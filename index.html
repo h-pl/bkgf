@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>寻味京城: 交互式美食探索指南 (v4.1)</title>
+    <title>寻味京城: 交互式美食探索指南 (v4.3)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700&display=swap" rel="stylesheet">
@@ -50,6 +50,16 @@
             backdrop-filter: blur(10px);
             border: 1px solid rgba(255, 255, 255, 0.2);
         }
+        /* Styles for collapsed filter */
+        #filters.collapsed #full-filters-view {
+            display: none;
+        }
+        #filters:not(.collapsed) #selected-filters-display {
+             display: none;
+        }
+        #toggle-filters-btn {
+            transition: opacity 0.3s ease, transform 0.3s ease;
+        }
     </style>
 </head>
 <body class="antialiased">
@@ -58,12 +68,14 @@
 
         <header class="text-center mb-8 md:mb-12">
             <h1 class="text-4xl md:text-5xl font-bold text-[#A75C3B]">寻味京城</h1>
-            <p class="mt-2 md:mt-4 text-lg text-gray-600">一份深度交互式美食探索指南 (v4.1)</p>
+            <p class="mt-2 md:mt-4 text-lg text-gray-600">一份深度交互式美食探索指南 (v4.3)</p>
         </header>
 
         <main>
-            <section id="filters" class="mb-8 p-6 bg-white/60 rounded-xl shadow-sm backdrop-blur-sm sticky top-4 z-10">
-                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+             <section id="filters" class="mb-8 p-6 bg-white/60 backdrop-blur-sm rounded-xl shadow-lg sticky top-0 z-10">
+                <div id="selected-filters-display" class="flex flex-wrap items-center gap-2 cursor-pointer" title="点击展开筛选器">
+                </div>
+                <div id="full-filters-view" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
                     <div>
                         <h3 class="font-bold mb-3 text-lg text-[#A75C3B]">菜系类别</h3>
                         <div id="cuisine-filters" class="flex flex-wrap gap-2"></div>
@@ -77,8 +89,12 @@
                         <p class="text-xs text-gray-400 mb-2">(从朝阳公园地铁站出发)</p>
                         <div id="time-filters" class="flex flex-wrap gap-2"></div>
                     </div>
+                    <div>
+                        <h3 class="font-bold mb-3 text-lg text-[#A75C3B]">行政区</h3>
+                        <div id="district-filters" class="flex flex-wrap gap-2"></div>
+                    </div>
                      <div>
-                        <h3 class="font-bold mb-3 text-lg text-[#A75C3B]">特别筛选</h3>
+                        <h3 class="font-bold mb-3 text-lg text-[#A75C3B]">特别标签</h3>
                         <div id="special-filters" class="flex flex-wrap gap-2"></div>
                     </div>
                 </div>
@@ -195,6 +211,10 @@
             </div>
         </div>
     </div>
+    
+    <button id="toggle-filters-btn" class="hidden fixed bottom-6 right-6 bg-[#D35400] text-white w-14 h-14 rounded-full shadow-lg flex items-center justify-center z-20 transform hover:scale-110 transition-transform">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" /></svg>
+    </button>
 
     <script>
         document.addEventListener('DOMContentLoaded', function () {
@@ -220,47 +240,60 @@
             
             const modal = document.getElementById('restaurant-modal');
             const closeModalBtn = document.getElementById('close-modal');
-            const state = { cuisine: 'all', price: 'all', special: 'all', time: 'all', district: 'all' };
+            const toggleFiltersBtn = document.getElementById('toggle-filters-btn');
+            const filtersSection = document.getElementById('filters');
+            const selectedFiltersDisplay = document.getElementById('selected-filters-display');
+            const state = {
+                cuisine: [],
+                price: [],
+                time: [],
+                district: [],
+                special: []
+            };
             let ratingDistributionChart, ratingRankChart;
 
+            const filterConfig = {
+                'cuisine-filters': { type: 'cuisine', title: '全部菜系', items: [...new Set(restaurants.map(r => r.cuisine))] },
+                'price-filters': { type: 'price', title: '所有价位', items: ['¥', '¥¥', '¥¥¥'] },
+                'time-filters': { type: 'time', title: '不限', items: { '<30分钟': '0-30', '30-60分钟': '31-60', '>60分钟': '61+' } },
+                'district-filters': { type: 'district', title: '全部区域', items: [...new Set(restaurants.map(r => r.district))] },
+                'special-filters': { type: 'special', title: '无', items: ['神级餐厅', '含羊肉'] }
+            };
+
             const renderFilters = () => {
-                const containers = {
-                    'cuisine-filters': ['all', ...new Set(restaurants.map(r => r.cuisine))],
-                    'price-filters': ['all', '¥', '¥¥', '¥¥¥'],
-                    'time-filters': ['all', 30, 60, 120],
-                    'special-filters': ['all', '神级餐厅', '含羊肉', ...new Set(restaurants.map(r => r.district))]
-                };
-
-                const getText = (type, item) => {
-                    if (type === 'cuisine-filters') return item === 'all' ? '全部菜系' : item;
-                    if (type === 'price-filters') return item === 'all' ? '所有价位' : item;
-                    if (type === 'time-filters') return item === 'all' ? '不限' : `<${item}分钟`;
-                    if (type === 'special-filters') {
-                        if (item === 'all') return '无';
-                        if (['神级餐厅', '含羊肉'].includes(item)) return item;
-                        return item; 
-                    }
-                };
-                
-                const getDataType = (type, item) => {
-                    if (['神级餐厅', '含羊肉'].includes(item)) return 'special';
-                    if (['朝阳', '西城', '东城', '丰台', '昌平', '通州'].includes(item)) return 'district';
-                    if (type === 'price-filters') return 'price';
-                    if (type === 'time-filters') return 'time';
-                    return 'cuisine';
-                }
-
-                for (const [containerId, items] of Object.entries(containers)) {
+                for (const [containerId, config] of Object.entries(filterConfig)) {
                     const container = document.getElementById(containerId);
-                    if (container) {
-                         container.innerHTML = items.map(item => {
-                            const type = getDataType(containerId, item);
-                            const text = getText(containerId, item);
-                            const isActive = (state[type] === item) || (state.district === item);
-                             return `<button class="filter-btn px-3 py-1.5 text-sm font-medium rounded-full bg-white shadow-sm hover:bg-gray-100 ${isActive ? 'active' : ''}" data-filter="${item}" data-type="${type}">${text}</button>`;
-                         }).join('');
+                    if (!container) continue;
+
+                    let buttonsHTML = `<button class="filter-btn px-3 py-1.5 text-sm font-medium rounded-full bg-white shadow-sm hover:bg-gray-100 ${state[config.type].length === 0 ? 'active' : ''}" data-filter="all" data-type="${config.type}">${config.title}</button>`;
+                    const items = Array.isArray(config.items) ? config.items.map(item => ({ text: item, value: item })) : Object.entries(config.items).map(([text, value]) => ({ text, value }));
+                    
+                    buttonsHTML += items.map(({ text, value }) => `
+                        <button class="filter-btn px-3 py-1.5 text-sm font-medium rounded-full bg-white shadow-sm hover:bg-gray-100 ${state[config.type].includes(value) ? 'active' : ''}" data-filter="${value}" data-type="${config.type}">${text}</button>
+                    `).join('');
+                    container.innerHTML = buttonsHTML;
+                }
+            };
+
+            const updateSelectedFiltersDisplay = () => {
+                let activeFiltersHTML = '';
+                let count = 0;
+                for (const [type, filters] of Object.entries(state)) {
+                    if (filters.length > 0) {
+                        filters.forEach(filter => {
+                            let text = filter;
+                            // Find text representation for special values like time ranges
+                            if (type === 'time') {
+                                for (const [key, val] of Object.entries(filterConfig['time-filters'].items)) {
+                                    if (val === filter) text = key;
+                                }
+                            }
+                            activeFiltersHTML += `<span class="bg-gray-200 text-gray-800 px-2 py-1 rounded-full text-sm font-medium">${text}</span>`;
+                            count++;
+                        });
                     }
                 }
+                selectedFiltersDisplay.innerHTML = count > 0 ? activeFiltersHTML : '<span class="text-gray-500">显示所有餐厅 (点击展开筛选)</span>';
             };
             
             const getRatingClass = (rating) => (rating >= 9.0 ? 'bg-green-100 text-green-800' : rating >= 8.5 ? 'bg-yellow-100 text-yellow-800' : 'bg-gray-100 text-gray-800');
@@ -286,30 +319,42 @@
                 </div>`;
             
             const filterAndRender = () => {
-                const filtered = restaurants.filter(r => 
-                    (state.cuisine === 'all' || r.cuisine === state.cuisine) &&
-                    (state.price === 'all' || r.priceSymbol === state.price) &&
-                    (state.time === 'all' || r.travelTime <= state.time) &&
-                    (state.district === 'all' || r.district === state.district) &&
-                    (state.special === 'all' || 
-                     (state.special === '神级餐厅' && r.topPick) || 
-                     (state.special === '含羊肉' && r.hasMutton))
-                );
+                const filtered = restaurants.filter(r => {
+                    const cuisineMatch = state.cuisine.length === 0 || state.cuisine.includes(r.cuisine);
+                    const priceMatch = state.price.length === 0 || state.price.includes(r.priceSymbol);
+                    const districtMatch = state.district.length === 0 || state.district.includes(r.district);
+                    const specialMatch = state.special.length === 0 || state.special.every(spec => (spec === '神级餐厅' && r.topPick) || (spec === '含羊肉' && r.hasMutton));
+                    const timeMatch = state.time.length === 0 || state.time.some(t => (t === '0-30' && r.travelTime <= 30) || (t === '31-60' && r.travelTime > 30 && r.travelTime <= 60) || (t === '61+' && r.travelTime > 60));
+                    return cuisineMatch && priceMatch && districtMatch && specialMatch && timeMatch;
+                });
                 
                 const container = document.getElementById('restaurants-container');
                 container.innerHTML = filtered.length > 0 ? filtered.map(restaurantCardHTML).join('') : '';
                 document.getElementById('no-results').classList.toggle('hidden', filtered.length > 0);
                 container.querySelectorAll('.restaurant-card').forEach(card => card.addEventListener('click', () => openModal(card.dataset.id)));
                 renderCharts(filtered);
+                updateSelectedFiltersDisplay();
             };
 
             const handleFilterClick = (e) => {
-                if (e.target.tagName === 'BUTTON') {
-                    const { filter, type } = e.target.dataset;
-                    state[type] = state[type] === filter ? 'all' : filter;
-                    renderFilters();
-                    filterAndRender();
+                const button = e.target.closest('.filter-btn');
+                if (!button) return;
+
+                const { filter, type } = button.dataset;
+
+                if (filter === 'all') {
+                    state[type] = [];
+                } else {
+                    const index = state[type].indexOf(filter);
+                    if (index > -1) {
+                        state[type].splice(index, 1);
+                    } else {
+                        state[type].push(filter);
+                    }
                 }
+                
+                renderFilters();
+                filterAndRender();
             };
             
             const openModal = (id) => {
@@ -346,12 +391,7 @@
                     return;
                 }
 
-                const ratingTiers = {
-                    '神级 (9.5+)': 0,
-                    '卓越 (9.0-9.4)': 0,
-                    '优秀 (8.5-8.9)': 0,
-                };
-
+                const ratingTiers = { '神级 (9.5+)': 0, '卓越 (9.0-9.4)': 0, '优秀 (8.5-8.9)': 0 };
                 data.forEach(r => {
                     if (r.rating >= 9.5) ratingTiers['神级 (9.5+)']++;
                     else if (r.rating >= 9.0) ratingTiers['卓越 (9.0-9.4)']++;
@@ -359,44 +399,28 @@
                 });
 
                 ratingDistributionChart = new Chart(donutCtx, {
-                    type: 'doughnut',
-                    data: {
-                        labels: Object.keys(ratingTiers),
-                        datasets: [{ 
-                            data: Object.values(ratingTiers), 
-                            backgroundColor: ['#e67e22', '#27ae60', '#f1c40f']
-                        }]
-                    },
+                    type: 'doughnut', data: { labels: Object.keys(ratingTiers), datasets: [{ data: Object.values(ratingTiers), backgroundColor: ['#e67e22', '#27ae60', '#f1c40f'] }] },
                     options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } } }
                 });
 
                 const sortedByRating = [...data].sort((a, b) => b.rating - a.rating);
-
                 ratingRankChart = new Chart(barCtx, {
-                    type: 'bar',
-                    data: {
-                        labels: sortedByRating.map(r => r.name),
-                        datasets: [{ 
-                            label: '评分', 
-                            data: sortedByRating.map(r => r.rating), 
-                            backgroundColor: sortedByRating.map(r => r.rating >= 9.0 ? 'rgba(39, 174, 96, 0.6)' : 'rgba(241, 196, 15, 0.6)')
-                        }]
-                    },
-                    options: { 
-                        responsive: true, 
-                        maintainAspectRatio: false, 
-                        indexAxis: 'y', 
-                        plugins: { legend: { display: false } },
-                        scales: {
-                            x: {
-                                beginAtZero: true,
-                                suggestedMin: 8.0
-                            }
-                        }
-                    }
+                    type: 'bar', data: { labels: sortedByRating.map(r => r.name), datasets: [{ label: '评分', data: sortedByRating.map(r => r.rating), backgroundColor: sortedByRating.map(r => r.rating >= 9.0 ? 'rgba(39, 174, 96, 0.6)' : 'rgba(241, 196, 15, 0.6)') }] },
+                    options: { responsive: true, maintainAspectRatio: false, indexAxis: 'y', plugins: { legend: { display: false } }, scales: { x: { beginAtZero: false, suggestedMin: 8.0 } } }
                 });
             };
 
+            const header = document.querySelector('header');
+            const observer = new IntersectionObserver(([e]) => {
+                const isCollapsed = e.intersectionRatio < 1;
+                filtersSection.classList.toggle('collapsed', isCollapsed);
+                toggleFiltersBtn.classList.toggle('hidden', !isCollapsed);
+                toggleFiltersBtn.classList.toggle('opacity-0', !isCollapsed);
+            }, { threshold: [1] });
+            observer.observe(header);
+
+            toggleFiltersBtn.addEventListener('click', () => window.scrollTo({ top: 0, behavior: 'smooth' }));
+            selectedFiltersDisplay.addEventListener('click', () => window.scrollTo({ top: 0, behavior: 'smooth' }));
             document.getElementById('filters').addEventListener('click', handleFilterClick);
             closeModalBtn.addEventListener('click', closeModal);
             modal.addEventListener('click', (e) => e.target === modal && closeModal());
