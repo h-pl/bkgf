@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>寻味京城: 交互式美食探索指南 (v4.1)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <!-- Chosen Palette: Warm Neutrals -->
+    <!-- Application Structure Plan: A task-oriented dashboard structure is chosen over the report's linear format to prioritize user-friendliness. The core is an interactive filtering system (by Cuisine, Price, Area) and a card-based layout. This allows users to immediately act on their intent (e.g., "find a mid-range hot pot place") rather than reading through chapters. A "Top Picks" section provides instant value, while a dedicated "Gourmet's Compass" section isolates actionable advice. This non-linear, interactive model is superior for a digital guide as it facilitates quick discovery and comparison, which is the primary goal for someone looking for a restaurant. -->
+    <!-- Visualization & Content Choices: Report Info: Table of hot pot restaurants with prices. -> Goal: Compare costs easily. -> Viz/Presentation: Interactive Bar Chart (Chart.js/Canvas). -> Interaction: Hover tooltips show exact prices. -> Justification: A bar chart offers a much faster, more intuitive comparison of quantitative data than a text column in a table, enhancing user understanding. Report Info: Long lists of restaurants. -> Goal: Organize and filter. -> Presentation: Interactive Cards. -> Interaction: Filter buttons (Cuisine, Price, Area) dynamically show/hide cards. -> Justification: Cards are scannable and modular. Filtering is essential for navigating a large dataset (>50 restaurants) and makes the guide genuinely useful. Report Info: Textual advice. -> Goal: Inform. -> Presentation: Dedicated HTML section with clear typography. -> Justification: Separates instructional content from discovery content for clarity. -->
+    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+    <style>
+        body {
+            font-family: 'Noto Sans SC', sans-serif;
+            background-color: #FDFBF7;
+            color: #38302A;
+        }
+        .filter-btn {
+            transition: all 0.3s ease;
+        }
+        .filter-btn.active {
+            background-color: #D35400;
+            color: #FFFFFF;
+            font-weight: 700;
+        }
+        .restaurant-card {
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+        .restaurant-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+        }
+        .modal {
+            transition: opacity 0.3s ease, visibility 0.3s ease;
+        }
+        .modal-content {
+            transition: transform 0.3s ease;
+        }
+        .chart-container {
+            position: relative;
+            width: 100%;
+            margin-left: auto;
+            margin-right: auto;
+            height: 350px;
+        }
+        .schedule-card {
+            background: rgba(255, 255, 255, 0.7);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+    </style>
+</head>
+<body class="antialiased">
+
+    <div id="app" class="container mx-auto p-4 md:p-8 max-w-7xl">
+
+        <header class="text-center mb-8 md:mb-12">
+            <h1 class="text-4xl md:text-5xl font-bold text-[#A75C3B]">寻味京城</h1>
+            <p class="mt-2 md:mt-4 text-lg text-gray-600">一份深度交互式美食探索指南 (v4.1)</p>
+        </header>
+
+        <main>
+            <section id="filters" class="mb-8 p-6 bg-white/60 rounded-xl shadow-sm backdrop-blur-sm sticky top-4 z-10">
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                    <div>
+                        <h3 class="font-bold mb-3 text-lg text-[#A75C3B]">菜系类别</h3>
+                        <div id="cuisine-filters" class="flex flex-wrap gap-2"></div>
+                    </div>
+                    <div>
+                        <h3 class="font-bold mb-3 text-lg text-[#A75C3B]">人均消费</h3>
+                        <div id="price-filters" class="flex flex-wrap gap-2"></div>
+                    </div>
+                     <div>
+                        <h3 class="font-bold mb-3 text-lg text-[#A75C3B]">通勤时间</h3>
+                        <p class="text-xs text-gray-400 mb-2">(从朝阳公园地铁站出发)</p>
+                        <div id="time-filters" class="flex flex-wrap gap-2"></div>
+                    </div>
+                     <div>
+                        <h3 class="font-bold mb-3 text-lg text-[#A75C3B]">特别筛选</h3>
+                        <div id="special-filters" class="flex flex-wrap gap-2"></div>
+                    </div>
+                </div>
+            </section>
+            
+            <section id="restaurant-list" class="mb-12">
+                <h2 class="text-3xl font-bold text-center mb-8 text-[#A75C3B]">美食探索</h2>
+                 <p class="text-center text-gray-600 mb-8 max-w-3xl mx-auto">在这里，我们为您汇集了京城的口碑餐厅。其中带有“神级”徽章的，是经过层层筛选、不容错过的顶尖之选。现在，开始使用上方的过滤器，寻找满足您口味的下一餐吧！</p>
+                <div id="restaurants-container" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"></div>
+                <p id="no-results" class="text-center text-gray-500 py-10 hidden">未找到符合条件的餐厅。</p>
+            </section>
+            
+            <section id="charts" class="mb-12">
+                <h2 class="text-3xl font-bold text-center mb-8 text-[#A75C3B]">动态数据看板</h2>
+                <p class="text-center text-gray-600 mb-8 max-w-3xl mx-auto">以下图表将根据您的筛选实时变化，为您提供精准的数据洞察。</p>
+                 <div class="grid grid-cols-1 lg:grid-cols-5 gap-8">
+                    <div class="lg:col-span-2 bg-white/60 p-4 rounded-xl shadow-sm">
+                        <h3 class="font-bold text-center mb-4">餐厅评分分布</h3>
+                        <div class="chart-container">
+                            <canvas id="ratingDistributionChart"></canvas>
+                        </div>
+                    </div>
+                    <div class="lg:col-span-3 bg-white/60 p-4 rounded-xl shadow-sm">
+                        <h3 class="font-bold text-center mb-4">餐厅评分排行</h3>
+                        <div class="chart-container">
+                             <canvas id="ratingRankChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+             <section id="schedule" class="mb-12">
+                <h2 class="text-3xl font-bold text-center mb-8 text-[#A75C3B]">主题周末寻味计划</h2>
+                <p class="text-center text-gray-600 mb-8 max-w-3xl mx-auto">为您精心策划的三个主题周末，将美食探索与城市文化之旅完美结合。</p>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <div class="schedule-card rounded-lg p-6 shadow-lg">
+                        <h3 class="font-bold text-xl text-center text-[#A75C3B] mb-1">第一周：中轴线历史之旅</h3>
+                        <p class="text-center text-sm text-gray-500 mb-4">游览：国家博物馆</p>
+                        <div class="space-y-4">
+                            <p class="text-sm text-gray-600">游览国博，感受华夏文明的厚重。傍晚前往前门或牛街，品味地道京味。</p>
+                            <div><p class="font-semibold">午餐：<span class="font-normal text-gray-700">可选择在国博内简餐</span></p></div>
+                            <div><p class="font-semibold">晚餐：<span class="font-normal text-gray-700">南门涮肉 或 聚宝源</span></p></div>
+                        </div>
+                    </div>
+                    <div class="schedule-card rounded-lg p-6 shadow-lg">
+                        <h3 class="font-bold text-xl text-center text-[#A75C3B] mb-1">第二周：雄关古韵之旅</h3>
+                        <p class="text-center text-sm text-gray-500 mb-4">游览：慕田峪长城</p>
+                        <div class="space-y-4">
+                           <p class="text-sm text-gray-600">攀登雄伟长城，体验北国风光。返程途中，用一顿酣畅淋漓的烧烤犒劳自己。</p>
+                            <div><p class="font-semibold">午餐：<span class="font-normal text-gray-700">景区附近农家菜</span></p></div>
+                            <div><p class="font-semibold">晚餐：<span class="font-normal text-gray-700">东直门烧烤 (回龙观店)</span></p></div>
+                        </div>
+                    </div>
+                    <div class="schedule-card rounded-lg p-6 shadow-lg">
+                         <h3 class="font-bold text-xl text-center text-[#A75C3B] mb-1">第三周：皇家园林之旅</h3>
+                        <p class="text-center text-sm text-gray-500 mb-4">游览：颐和园</p>
+                         <div class="space-y-4">
+                           <p class="text-sm text-gray-600">漫步于皇家园林，感受山水画境。游览结束后，选择一家精致餐厅，享受惬意晚餐。</p>
+                            <div><p class="font-semibold">午餐：<span class="font-normal text-gray-700">听鹂馆 (颐和园内)</span></p></div>
+                            <div><p class="font-semibold">晚餐：<span class="font-normal text-gray-700">淮扬府 或 雅居小馆</span></p></div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <section id="gourmet-compass">
+                 <h2 class="text-3xl font-bold text-center mb-8 text-[#A75C3B]">美食家指南针</h2>
+                 <div class="max-w-4xl mx-auto bg-white/60 p-8 rounded-xl shadow-sm">
+                     <div class="space-y-8 text-gray-700">
+                        <div>
+                            <h3 class="font-bold text-xl mb-3 text-[#A75C3B]">💡 连锁品牌最优解 (聪明吃法)</h3>
+                            <ul class="list-disc list-inside space-y-1">
+                                <li><strong>很久以前</strong>: 品质稳定，是入门级烧烤的可靠选择。</li>
+                                <li><strong>田老师红烧肉</strong>: 其精华在于<strong class="text-[#D35400]">木须肉饭</strong>或<strong class="text-[#D35400]">香菇鸡腿饭</strong>。</li>
+                                <li><strong>南京大牌档</strong>: 重点应放在<strong class="text-[#D35400]">甜品与特色小吃</strong>上。</li>
+                            </ul>
+                        </div>
+                        <div>
+                            <h3 class="font-bold text-xl mb-3 text-[#A75C3B]">⚠️ 避坑与修正指南</h3>
+                            <ul class="list-disc list-inside space-y-2">
+                                <li><strong class="text-[#D35400]">关于“紫光园”</strong>: 这是一家性价比高、味道正宗的清真老字号，家庭聚餐的绝佳选择。</li>
+                                <li><strong class="text-[#D35400]">游客区餐厅</strong>: 在王府井、前门等主街上的餐厅需谨慎选择。</li>
+                                <li><strong class="text-[#D35400]">“招牌菜”陷阱</strong>: 一家餐厅的招牌菜未必是其最出色的产品。</li>
+                            </ul>
+                        </div>
+                    </div>
+                 </div>
+            </section>
+        </main>
+    </div>
+
+    <div id="restaurant-modal" class="modal fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center p-4 z-50 invisible opacity-0">
+        <div class="modal-content bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto transform scale-95">
+            <div class="p-6 md:p-8 relative">
+                <button id="close-modal" class="absolute top-4 right-4 text-gray-500 hover:text-gray-800 text-2xl">&times;</button>
+                <h2 id="modal-name" class="text-2xl md:text-3xl font-bold mb-2 text-[#A75C3B]"></h2>
+                <div class="flex flex-wrap items-center gap-x-4 gap-y-2 mb-4 text-sm">
+                    <span id="modal-cuisine" class="bg-amber-100 text-amber-800 px-2 py-1 rounded-full font-medium"></span>
+                    <span id="modal-price" class="bg-emerald-100 text-emerald-800 px-2 py-1 rounded-full font-medium"></span>
+                    <span id="modal-rating" class="font-bold px-2 py-1 rounded-full"></span>
+                    <span id="modal-time" class="bg-blue-100 text-blue-800 px-2 py-1 rounded-full font-medium"></span>
+                </div>
+                <div class="prose max-w-none text-gray-700">
+                    <h4 class="font-bold">食客点评:</h4>
+                    <p id="modal-feature" class="mb-4"></p>
+                    <h4 class="font-bold">招牌菜品:</h4>
+                    <p id="modal-dishes" class="mb-4"></p>
+                    <h4 class="font-bold">地址:</h4>
+                    <p id="modal-address" class="flex items-center">
+                        <span class="mr-2">📍</span>
+                        <span id="address-text"></span>
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            const restaurants = [
+                { id: 14, name: '新疆饭庄', cuisine: '地方驻京办', priceSymbol: '¥¥', priceValue: 130, district: '西城', topPick: true, hasMutton: true, rating: 9.8, travelTime: 50, dishes: '羊肉串、大盘鸡、手抓饭', feature: '羊肉毫无膻味，鲜嫩多汁，是体验正宗新疆菜的必访之地。', address: '北京市西城区车公庄大街北里1号' },
+                { id: 11, name: '新川办', cuisine: '地方驻京办', priceSymbol: '¥¥¥', priceValue: 160, district: '丰台', topPick: true, hasMutton: false, rating: 9.7, travelTime: 70, dishes: '水煮鱼、毛血旺、辣子鸡', feature: '享有“吃川菜到川办”的美誉，是川菜爱好者的圣地。', address: '北京市丰台区小红门路312号' },
+                { id: 15, name: '芈重山火锅', cuisine: '风味火锅', priceSymbol: '¥¥', priceValue: 140, district: '朝阳', topPick: true, hasMutton: true, rating: 9.6, travelTime: 25, dishes: '脆毛肚、鸭肠、鲜鸭血', feature: '北京最正宗的重庆火锅之一，底料由重庆制作，风味浓郁。', address: '北京市朝阳区百子湾路16号' },
+                { id: 19, name: '西府面馆', cuisine: '招牌面食', priceSymbol: '¥', priceValue: 30, district: '西城', topPick: true, hasMutton: false, rating: 9.5, travelTime: 45, dishes: '西府削筋面、精品肉夹馍', feature: '一家经营超十年的老店，口感极度筋道，是“宝藏小馆”的完美典范。', address: '北京市西城区西四北大街271号' },
+                { id: 1, name: '聚宝源', cuisine: '京味涮肉', priceSymbol: '¥¥', priceValue: 120, district: '西城', topPick: false, hasMutton: true, rating: 9.4, travelTime: 55, dishes: '手切鲜羊肉、一品烧饼', feature: '公认的经典代表，肉质上乘，烧饼一绝。务必做好排队1-2小时的心理准备。', address: '北京市西城区牛街西里商业1号楼' },
+                { id: 2, name: '南门涮肉', cuisine: '京味涮肉', priceSymbol: '¥¥', priceValue: 110, district: '东城', topPick: false, hasMutton: true, rating: 9.2, travelTime: 40, dishes: '手切鲜羊肉、麻酱', feature: '与聚宝源齐名的经典选择，同样需要有排队的耐心。', address: '北京市东城区永内东街东里13号楼' },
+                { id: 26, name: '西直门磁器涮肉', cuisine: '京味涮肉', priceSymbol: '¥¥', priceValue: 115, district: '西城', topPick: false, hasMutton: true, rating: 8.9, travelTime: 40, dishes: '手切羊肉、羊肉串', feature: '社区推荐的性价比之选，以肉质好、价格优、羊肉串美味著称。', address: '北京市西城区赵登禹路123号' },
+                { id: 9, name: '烤肉刘', cuisine: '炙子烤肉', priceSymbol: '¥¥', priceValue: 100, district: '西城', topPick: false, hasMutton: true, rating: 9.1, travelTime: 50, dishes: '烤牛肉、窝头片配臭豆腐', feature: '百年老字号，体验传统风味和“大口吃肉”豪情的最佳场所。', address: '北京市西城区阡儿胡同41号' },
+                { id: 27, name: '烤肉宛', cuisine: '炙子烤肉', priceSymbol: '¥¥', priceValue: 120, district: '西城', topPick: false, hasMutton: true, rating: 9.0, travelTime: 50, dishes: '烤牛肉、烤羊肉', feature: '与烤肉刘齐名的百年老店，京城炙子烤肉界的泰斗。', address: '北京市西城区南礼士路58号' },
+                { id: 28, name: '东直门烧烤 (回龙观店)', cuisine: '特色烧烤', priceSymbol: '¥¥', priceValue: 90, district: '昌平', topPick: false, hasMutton: true, rating: 8.8, travelTime: 80, dishes: '羊肉串、各类烧烤', feature: 'V2EX用户口中的“吃过最好吃的烧烤”，属于深度玩家的推荐。', address: '北京市昌平区回龙观西大街111号' },
+                { id: 29, name: '老四烤串 (十里堡店)', cuisine: '特色烧烤', priceSymbol: '¥', priceValue: 70, district: '朝阳', topPick: false, hasMutton: true, rating: 8.7, travelTime: 15, dishes: '羊肉串、板筋', feature: '环境普通，但以出色的味道和极高的性价比在食客中享有盛誉。', address: '北京市朝阳区十里堡路1号' },
+                { id: 23, name: '六日都烤牛内脏', cuisine: '日料', priceSymbol: '¥¥¥', priceValue: 200, district: '朝阳', topPick: false, hasMutton: false, rating: 9.3, travelTime: 20, dishes: '烤牛内脏拼盘', feature: '评价极高，能让人“回味好几天”的水平，是日式烧烤爱好者的高阶选择。', address: '北京市朝阳区麦子店西街39号' },
+                { id: 30, name: '雅居小馆', cuisine: '精致中餐', priceSymbol: '¥¥¥', priceValue: 180, district: '西城', topPick: false, hasMutton: false, rating: 8.9, travelTime: 45, dishes: '花雕鸡、毛血旺', feature: '口碑极好的中高端家常菜，招牌菜备受推崇，适合朋友小聚。', address: '北京市西城区车公庄大街9号院' },
+                { id: 21, name: '淮扬府', cuisine: '精致中餐', priceSymbol: '¥¥¥', priceValue: 250, district: '东城', topPick: false, hasMutton: false, rating: 9.2, travelTime: 35, dishes: '扬州炒饭、生煎包、蟹粉狮子头', feature: '被誉为“最便宜的黑珍珠餐厅”，菜品精致且份量足。', address: '北京市东城区安定门外大街198号' },
+                { id: 31, name: '三泉冷面', cuisine: '东北菜', priceSymbol: '¥', priceValue: 50, district: '朝阳', topPick: false, hasMutton: false, rating: 8.6, travelTime: 25, dishes: '冷面、锅包肉、打糕', feature: '冷面、锅包肉、打糕口味地道，是体验东北风情的好去处。', address: '北京市朝阳区雅宝路8号' },
+                { id: 24, name: '满记烧饼', cuisine: '京味小吃', priceSymbol: '¥', priceValue: 10, district: '西城', topPick: false, hasMutton: true, rating: 8.8, travelTime: 55, dishes: '牛肉烧饼', feature: '仅需5元一个的牛肉烧饼，香酥可口，是牛街必须排队品尝的传奇小吃。', address: '北京市西城区牛街输入胡同3号' },
+                { id: 22, name: '紫光园', cuisine: '清真菜', priceSymbol: '¥', priceValue: 80, district: '通州', topPick: false, hasMutton: true, rating: 8.9, travelTime: 65, dishes: '炒疙瘩、炸松肉、烤鸭', feature: '性价比超高的清真老字号，味道正宗，深受本地人喜爱，家庭聚餐的绝佳选择。', address: '北京市通州区通胡大街23号' }
+            ];
+            
+            const modal = document.getElementById('restaurant-modal');
+            const closeModalBtn = document.getElementById('close-modal');
+            const state = { cuisine: 'all', price: 'all', special: 'all', time: 'all', district: 'all' };
+            let ratingDistributionChart, ratingRankChart;
+
+            const renderFilters = () => {
+                const containers = {
+                    'cuisine-filters': ['all', ...new Set(restaurants.map(r => r.cuisine))],
+                    'price-filters': ['all', '¥', '¥¥', '¥¥¥'],
+                    'time-filters': ['all', 30, 60, 120],
+                    'special-filters': ['all', '神级餐厅', '含羊肉', ...new Set(restaurants.map(r => r.district))]
+                };
+
+                const getText = (type, item) => {
+                    if (type === 'cuisine-filters') return item === 'all' ? '全部菜系' : item;
+                    if (type === 'price-filters') return item === 'all' ? '所有价位' : item;
+                    if (type === 'time-filters') return item === 'all' ? '不限' : `<${item}分钟`;
+                    if (type === 'special-filters') {
+                        if (item === 'all') return '无';
+                        if (['神级餐厅', '含羊肉'].includes(item)) return item;
+                        return item; 
+                    }
+                };
+                
+                const getDataType = (type, item) => {
+                    if (['神级餐厅', '含羊肉'].includes(item)) return 'special';
+                    if (['朝阳', '西城', '东城', '丰台', '昌平', '通州'].includes(item)) return 'district';
+                    if (type === 'price-filters') return 'price';
+                    if (type === 'time-filters') return 'time';
+                    return 'cuisine';
+                }
+
+                for (const [containerId, items] of Object.entries(containers)) {
+                    const container = document.getElementById(containerId);
+                    if (container) {
+                         container.innerHTML = items.map(item => {
+                            const type = getDataType(containerId, item);
+                            const text = getText(containerId, item);
+                            const isActive = (state[type] === item) || (state.district === item);
+                             return `<button class="filter-btn px-3 py-1.5 text-sm font-medium rounded-full bg-white shadow-sm hover:bg-gray-100 ${isActive ? 'active' : ''}" data-filter="${item}" data-type="${type}">${text}</button>`;
+                         }).join('');
+                    }
+                }
+            };
+            
+            const getRatingClass = (rating) => (rating >= 9.0 ? 'bg-green-100 text-green-800' : rating >= 8.5 ? 'bg-yellow-100 text-yellow-800' : 'bg-gray-100 text-gray-800');
+            const getRatingText = (rating) => (rating >= 9.5 ? '神级' : rating >= 9.0 ? '卓越' : rating >= 8.5 ? '优秀' : '不错');
+
+            const restaurantCardHTML = (r) => `
+                <div class="restaurant-card relative bg-white rounded-xl overflow-hidden shadow-md cursor-pointer" data-id="${r.id}">
+                    ${r.topPick ? '<span class="absolute top-0 right-0 bg-amber-500 text-white text-xs font-bold px-3 py-1 rounded-bl-lg z-10">神级</span>' : ''}
+                    <div class="p-6">
+                        <div class="flex justify-between items-start mb-2">
+                            <h3 class="font-bold text-xl text-[#A75C3B] pr-2">${r.name}</h3>
+                            ${r.hasMutton ? '<span class="flex-shrink-0 bg-gray-200 text-gray-700 w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm">羊</span>' : ''}
+                        </div>
+                        <p class="text-gray-600 text-sm mb-4 h-12">${r.feature.substring(0, 50)}...</p>
+                        <div class="flex justify-between items-center text-xs">
+                            <div class="flex flex-wrap gap-2">
+                                <span class="bg-sky-100 text-sky-800 px-2 py-1 rounded-full font-medium">${r.cuisine}</span>
+                                <span class="bg-emerald-100 text-emerald-800 px-2 py-1 rounded-full font-medium">${r.priceSymbol}</span>
+                            </div>
+                            <span class="font-bold px-2 py-1 rounded-full ${getRatingClass(r.rating)}">评分 ${r.rating}</span>
+                        </div>
+                    </div>
+                </div>`;
+            
+            const filterAndRender = () => {
+                const filtered = restaurants.filter(r => 
+                    (state.cuisine === 'all' || r.cuisine === state.cuisine) &&
+                    (state.price === 'all' || r.priceSymbol === state.price) &&
+                    (state.time === 'all' || r.travelTime <= state.time) &&
+                    (state.district === 'all' || r.district === state.district) &&
+                    (state.special === 'all' || 
+                     (state.special === '神级餐厅' && r.topPick) || 
+                     (state.special === '含羊肉' && r.hasMutton))
+                );
+                
+                const container = document.getElementById('restaurants-container');
+                container.innerHTML = filtered.length > 0 ? filtered.map(restaurantCardHTML).join('') : '';
+                document.getElementById('no-results').classList.toggle('hidden', filtered.length > 0);
+                container.querySelectorAll('.restaurant-card').forEach(card => card.addEventListener('click', () => openModal(card.dataset.id)));
+                renderCharts(filtered);
+            };
+
+            const handleFilterClick = (e) => {
+                if (e.target.tagName === 'BUTTON') {
+                    const { filter, type } = e.target.dataset;
+                    state[type] = state[type] === filter ? 'all' : filter;
+                    renderFilters();
+                    filterAndRender();
+                }
+            };
+            
+            const openModal = (id) => {
+                const r = restaurants.find(r => r.id == id);
+                document.getElementById('modal-name').textContent = r.name;
+                document.getElementById('modal-cuisine').textContent = r.cuisine;
+                document.getElementById('modal-price').textContent = r.priceSymbol;
+                const ratingSpan = document.getElementById('modal-rating');
+                ratingSpan.textContent = `${getRatingText(r.rating)} ${r.rating}`;
+                ratingSpan.className = `font-bold px-2 py-1 rounded-full text-sm ${getRatingClass(r.rating)}`;
+                document.getElementById('modal-time').textContent = `~${r.travelTime}分钟`;
+                document.getElementById('modal-dishes').textContent = r.dishes;
+                document.getElementById('modal-feature').textContent = r.feature;
+                document.getElementById('address-text').textContent = r.address;
+                modal.classList.remove('invisible', 'opacity-0');
+                document.body.style.overflow = 'hidden';
+            };
+
+            const closeModal = () => {
+                modal.classList.add('invisible', 'opacity-0');
+                document.body.style.overflow = '';
+            };
+            
+            const renderCharts = (data) => {
+                if (ratingDistributionChart) ratingDistributionChart.destroy();
+                if (ratingRankChart) ratingRankChart.destroy();
+                
+                const donutCtx = document.getElementById('ratingDistributionChart').getContext('2d');
+                const barCtx = document.getElementById('ratingRankChart').getContext('2d');
+
+                if (data.length === 0) {
+                     donutCtx.clearRect(0, 0, donutCtx.canvas.width, donutCtx.canvas.height);
+                     barCtx.clearRect(0, 0, barCtx.canvas.width, barCtx.canvas.height);
+                    return;
+                }
+
+                const ratingTiers = {
+                    '神级 (9.5+)': 0,
+                    '卓越 (9.0-9.4)': 0,
+                    '优秀 (8.5-8.9)': 0,
+                };
+
+                data.forEach(r => {
+                    if (r.rating >= 9.5) ratingTiers['神级 (9.5+)']++;
+                    else if (r.rating >= 9.0) ratingTiers['卓越 (9.0-9.4)']++;
+                    else if (r.rating >= 8.5) ratingTiers['优秀 (8.5-8.9)']++;
+                });
+
+                ratingDistributionChart = new Chart(donutCtx, {
+                    type: 'doughnut',
+                    data: {
+                        labels: Object.keys(ratingTiers),
+                        datasets: [{ 
+                            data: Object.values(ratingTiers), 
+                            backgroundColor: ['#e67e22', '#27ae60', '#f1c40f']
+                        }]
+                    },
+                    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } } }
+                });
+
+                const sortedByRating = [...data].sort((a, b) => b.rating - a.rating);
+
+                ratingRankChart = new Chart(barCtx, {
+                    type: 'bar',
+                    data: {
+                        labels: sortedByRating.map(r => r.name),
+                        datasets: [{ 
+                            label: '评分', 
+                            data: sortedByRating.map(r => r.rating), 
+                            backgroundColor: sortedByRating.map(r => r.rating >= 9.0 ? 'rgba(39, 174, 96, 0.6)' : 'rgba(241, 196, 15, 0.6)')
+                        }]
+                    },
+                    options: { 
+                        responsive: true, 
+                        maintainAspectRatio: false, 
+                        indexAxis: 'y', 
+                        plugins: { legend: { display: false } },
+                        scales: {
+                            x: {
+                                beginAtZero: true,
+                                suggestedMin: 8.0
+                            }
+                        }
+                    }
+                });
+            };
+
+            document.getElementById('filters').addEventListener('click', handleFilterClick);
+            closeModalBtn.addEventListener('click', closeModal);
+            modal.addEventListener('click', (e) => e.target === modal && closeModal());
+
+            renderFilters();
+            filterAndRender();
+        });
+    </script>
+</body>
+</html>
